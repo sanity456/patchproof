@@ -24,7 +24,10 @@ def mock_analysis(vm, verdict="BREAKING"):
         "migration_relevant": True,
         "summary": "The used API was removed.",
         "recommended_action": "Replace the call before upgrading.",
-        "citations": [{"source": "release", "passage": "removes legacy_parse", "why": "The app uses it."}],
+        "citations": [
+            {"source": "release", "passage": "Version 2 removes legacy_parse.", "why": "The application uses that removed API."},
+            {"source": "migration", "passage": "Replace legacy_parse with parse_config.", "why": "The guide names the required replacement."},
+        ],
     }
     vm.mock_llm(r".*independent software upgrade reviewer.*", json.dumps(payload))
 
@@ -38,6 +41,8 @@ def test_create_evaluate_and_list(direct_vm, direct_deploy, direct_alice):
     result = contract.evaluate_check(CHECK)
     assert result["status"] == "BREAKING"
     assert result["analysis"]["affected"] is True
+    assert len(result["analysis"]["source_receipts"]) == 2
+    assert len(contract.list_attempts(CHECK)) == 1
     wallet = "0x" + direct_alice.hex()
     page = contract.list_checks(wallet, 0, 20)
     assert page["total"] == 1
@@ -76,3 +81,42 @@ def test_unavailable_sources_can_be_retried(direct_vm, direct_deploy, direct_ali
     second = contract.evaluate_check(CHECK)
     assert second["status"] == "SAFE"
     assert second["attempts"] == 2
+    attempts = contract.list_attempts(CHECK)
+    assert [item["status"] for item in attempts] == ["UNVERIFIABLE", "SAFE"]
+
+
+def test_requires_supported_citations(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    create(contract)
+    mock_analysis(direct_vm)
+    incomplete = {
+        "verdict": "BREAKING", "severity": "HIGH", "affected": True,
+        "release_relevant": True, "migration_relevant": True,
+        "summary": "The used API was removed.",
+        "recommended_action": "Replace the call.",
+        "citations": [{"source": "release", "passage": "Version 2 removes legacy_parse.",
+                       "why": "The application uses that removed API."}],
+    }
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r"https://example\.com/releases/v2", {"status": 200, "body": "Version 2 removes legacy_parse."})
+    direct_vm.mock_web(r"https://docs\.example\.net/migrate-v2", {"status": 200, "body": "Replace legacy_parse with parse_config."})
+    direct_vm.mock_llm(r".*independent software upgrade reviewer.*", json.dumps(incomplete))
+    with direct_vm.expect_revert("Both sources need exact, supported citations"):
+        contract.evaluate_check(CHECK)
+    assert contract.get_check(CHECK)["status"] == "PENDING"
+    assert contract.list_attempts(CHECK) == []
+
+
+def test_validator_rejects_changed_source_snapshot(direct_vm, direct_deploy, direct_alice):
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    create(contract)
+    mock_analysis(direct_vm)
+    contract.evaluate_check(CHECK)
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r"https://example\.com/releases/v2",
+                       {"status": 200, "body": "Version 2 removes legacy_parse."})
+    direct_vm.mock_web(r"https://docs\.example\.net/migrate-v2",
+                       {"status": 200, "body": "This page changed after the leader read it."})
+    assert direct_vm.run_validator() is False

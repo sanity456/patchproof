@@ -16,6 +16,7 @@ const state = {
   verified: false,
   checkId: validCheckId(linkedCheck) ? linkedCheck : '',
   check: null,
+  attempts: [],
   checks: [],
   busy: false,
   notice: '',
@@ -34,9 +35,9 @@ function renderHeader() {
 }
 
 function renderAlert() {
-  const text = state.error || state.notice;
+  const text = state.error || state.notice || (state.pending ? `${state.pending.kind || 'Transaction'} was submitted before this page reloaded.` : '');
   if (!text) return '';
-  return `<div class="alert ${state.error ? 'error' : ''}"><span>${esc(text)}</span>${state.pending?.hash ? `<a href="${esc(explorerTx(state.pending.hash))}" target="_blank" rel="noopener">Explorer ↗</a>` : ''}${button('×', 'dismiss', 'aria-label="Dismiss"')}</div>`;
+  return `<div class="alert ${state.error ? 'error' : ''}"><span>${esc(text)}</span>${state.pending?.hash ? `<a href="${esc(explorerTx(state.pending.hash))}" target="_blank" rel="noopener">Explorer ↗</a>${button('Check status', 'recover-pending', 'class="alert-action"')}${state.error ? button('Clear local record', 'clear-pending', 'class="alert-action subtle"') : ''}` : ''}${button('×', 'dismiss', 'aria-label="Dismiss"')}</div>`;
 }
 
 function renderSetup() {
@@ -60,11 +61,17 @@ function renderCitation(item) {
   return `<blockquote><span>${esc(item.source)}</span><p>“${esc(item.passage)}”</p><small>${esc(item.why)}</small></blockquote>`;
 }
 
+function renderReceipt(item) {
+  return `<div class="receipt"><span>${esc(item.source)}</span><code>${esc(item.sha256)}</code><small>${esc(item.captured_bytes)} captured bytes</small></div>`;
+}
+
 function renderCheck() {
   if (!state.check) return '';
   const c = state.check;
   const a = c.analysis || {};
-  return `<section class="result"><div class="result-head"><div><span class="eyebrow">CHECK ${esc(c.id.slice(0, 10).toUpperCase())}</span><h2>${esc(c.package_name)} <small>${esc(c.current_version)} → ${esc(c.target_version)}</small></h2></div>${badge(c.status)}</div><div class="result-grid"><article><span class="label">DECLARED USAGE</span><p>${esc(c.usage_context)}</p></article><article><span class="label">SOURCES</span><a href="${esc(c.release_url)}" target="_blank" rel="noopener">Release notes ↗</a><a href="${esc(c.migration_url)}" target="_blank" rel="noopener">Migration guide ↗</a></article></div>${c.status === 'PENDING' ? `<div class="pending-card"><div><h3>Ready for validator review.</h3><p>The sources and usage are locked. Start consensus to publish the result.</p></div>${state.account?.toLowerCase() === c.owner ? button('Run consensus ↗', 'review-evaluate', `class="solid" ${state.busy ? 'disabled' : ''}`) : '<span>Connect the owner wallet to evaluate.</span>'}</div>` : `<div class="analysis"><div class="verdict"><span class="label">CONSENSUS VERDICT</span><h3>${esc(a.verdict)}</h3><dl><div><dt>Severity</dt><dd>${esc(a.severity)}</dd></div><div><dt>Affected</dt><dd>${a.affected ? 'YES' : 'NO'}</dd></div><div><dt>Attempts</dt><dd>${esc(c.attempts)}</dd></div></dl></div><div class="reason"><h3>${esc(a.summary || 'No summary returned.')}</h3><p>${esc(a.recommended_action || '')}</p>${Array.isArray(a.citations) && a.citations.length ? `<div class="citations">${a.citations.map(renderCitation).join('')}</div>` : ''}</div></div>${c.status === 'UNVERIFIABLE' && state.account?.toLowerCase() === c.owner ? button('Retry source review ↗', 'review-evaluate', `class="outline retry" ${state.busy ? 'disabled' : ''}`) : ''}`}<div class="result-foot"><span>Created ${esc(stamp(c.created_at))}</span><button type="button" data-action="copy-link">Copy public link</button></div></section>`;
+  const receipts = Array.isArray(a.source_receipts) ? a.source_receipts : [];
+  const attemptHistory = state.attempts.length ? `<div class="attempts"><span class="label">IMMUTABLE ATTEMPT HISTORY</span>${state.attempts.map(item => `<div><b>#${esc(item.number)} ${esc(item.status)}</b><span>${esc(stamp(item.evaluated_at))}</span><code>${esc(item.analysis?.source_receipts?.map(receipt => receipt.sha256.slice(0, 12)).join(' · ') || 'No source digest')}</code></div>`).join('')}</div>` : '';
+  return `<section class="result"><div class="result-head"><div><span class="eyebrow">CHECK ${esc(c.id.slice(0, 10).toUpperCase())}</span><h2>${esc(c.package_name)} <small>${esc(c.current_version)} → ${esc(c.target_version)}</small></h2></div>${badge(c.status)}</div><div class="result-grid"><article><span class="label">DECLARED USAGE</span><p>${esc(c.usage_context)}</p></article><article><span class="label">SOURCES</span><a href="${esc(c.release_url)}" target="_blank" rel="noopener">Release notes ↗</a><a href="${esc(c.migration_url)}" target="_blank" rel="noopener">Migration guide ↗</a></article></div>${c.status === 'PENDING' ? `<div class="pending-card"><div><h3>Ready for validator review.</h3><p>The sources and usage are locked. Start consensus to publish the result.</p></div>${state.account?.toLowerCase() === c.owner ? button('Run consensus ↗', 'review-evaluate', `class="solid" ${state.busy ? 'disabled' : ''}`) : '<span>Connect the owner wallet to evaluate.</span>'}</div>` : `<div class="analysis"><div class="verdict"><span class="label">CONSENSUS VERDICT</span><h3>${esc(a.verdict)}</h3><dl><div><dt>Severity</dt><dd>${esc(a.severity)}</dd></div><div><dt>Affected</dt><dd>${a.affected ? 'YES' : 'NO'}</dd></div><div><dt>Attempts</dt><dd>${esc(c.attempts)}</dd></div></dl></div><div class="reason"><h3>${esc(a.summary || 'No summary returned.')}</h3><p>${esc(a.recommended_action || '')}</p>${Array.isArray(a.citations) && a.citations.length ? `<div class="citations">${a.citations.map(renderCitation).join('')}</div>` : ''}${receipts.length ? `<div class="receipts"><span class="label">CAPTURED SOURCE DIGESTS</span>${receipts.map(renderReceipt).join('')}</div>` : ''}</div></div>${c.status === 'UNVERIFIABLE' && state.account?.toLowerCase() === c.owner ? button('Retry source review ↗', 'review-evaluate', `class="outline retry" ${state.busy ? 'disabled' : ''}`) : ''}${attemptHistory}`}<div class="result-foot"><span>Created ${esc(stamp(c.created_at))}</span><button type="button" data-action="copy-link">Copy public link</button></div></section>`;
 }
 
 function renderHistory() {
@@ -92,15 +99,30 @@ async function refresh() {
   try {
     await verifyContract(state.contract);
     state.verified = true;
-    state.check = state.checkId ? await read(state.contract, 'get_check', [state.checkId]) : null;
-    if (state.account) {
-      const page = await read(state.contract, 'list_checks', [state.account, 0n, 20n]);
-      state.checks = Array.isArray(page?.items) ? page.items.slice().reverse() : [];
-    }
     state.error = '';
   } catch (error) {
     state.verified = false;
     state.error = safeError(error);
+    render();
+    return;
+  }
+  state.check = null;
+  state.attempts = [];
+  if (state.checkId) {
+    try {
+      state.check = await read(state.contract, 'get_check', [state.checkId]);
+      state.attempts = await read(state.contract, 'list_attempts', [state.checkId]);
+    } catch (error) {
+      state.error = `The PatchProof contract is valid, but check ${state.checkId.slice(0, 10)}… was not found.`;
+    }
+  }
+  if (state.account) {
+    try {
+      const page = await read(state.contract, 'list_checks', [state.account, 0n, 20n]);
+      state.checks = Array.isArray(page?.items) ? page.items.slice().reverse() : [];
+    } catch (error) {
+      state.error = safeError(error);
+    }
   }
   render();
 }
@@ -121,20 +143,55 @@ function setCheckId(id) {
   history.replaceState({}, '', url);
 }
 
-async function perform(kind, transaction, verify) {
+async function perform(kind, transaction, verify, pendingData = {}) {
   if (state.busy) return;
+  if (state.pending) { message('Resolve the pending transaction before starting another action.', 'error'); return; }
   state.busy = true; state.modal = null; state.error = ''; state.notice = `Preparing ${kind}…`; render();
   try {
     state.account = await requestWallet();
     const hash = await transaction();
     if (!/^0x[\da-fA-F]{64}$/.test(hash || '')) throw new Error('Wallet did not return a valid transaction hash.');
-    state.pending = { kind, hash, account: state.account, contract: state.contract, checkId: state.checkId };
+    state.pending = { kind, hash, account: state.account, contract: state.contract, ...pendingData };
     rememberPending(state.pending);
     state.notice = `${kind} submitted. Waiting for validator consensus…`; render();
     const receipt = await waitForFinality(hash, state.account);
     await verify(receipt);
     forgetPending(); state.pending = null;
     state.notice = `${kind} finalized successfully.`;
+    await refresh();
+  } catch (error) {
+    state.error = safeError(error); state.notice = '';
+  } finally { state.busy = false; render(); }
+}
+
+async function verifyPending(pending, receipt) {
+  if (pending.kind === 'Contract deployment') return finishDeployment(receipt);
+  if (!validAddress(pending.contract) || !validCheckId(pending.checkId)) {
+    throw new Error('The saved transaction record is incomplete. Check its explorer entry.');
+  }
+  const record = await read(pending.contract, 'get_check', [pending.checkId]);
+  if (pending.kind === 'Check creation') {
+    if (record.owner !== pending.account.toLowerCase()) throw new Error('The confirmed check owner does not match the submitting wallet.');
+    state.contract = pending.contract;
+    setCheckId(pending.checkId);
+    return;
+  }
+  if (pending.kind === 'Release evaluation' && record.status === 'PENDING') {
+    throw new Error('The confirmed evaluation did not publish a verdict.');
+  }
+  state.contract = pending.contract;
+  setCheckId(pending.checkId);
+}
+
+async function recoverPending() {
+  const pending = state.pending;
+  if (!pending || state.busy) return;
+  state.busy = true; state.error = ''; state.notice = 'Checking the saved transaction’s final result…'; render();
+  try {
+    const receipt = await waitForFinality(pending.hash, pending.account);
+    await verifyPending(pending, receipt);
+    forgetPending(); state.pending = null;
+    state.notice = `${pending.kind} finalized successfully.`;
     await refresh();
   } catch (error) {
     state.error = safeError(error); state.notice = '';
@@ -152,6 +209,8 @@ function openReview(title, detail, action, label) { state.modal = { title, detai
 
 async function handleAction(action, target) {
   if (action === 'dismiss') { state.error = ''; state.notice = ''; render(); return; }
+  if (action === 'recover-pending') return recoverPending();
+  if (action === 'clear-pending') { forgetPending(); state.pending = null; state.error = ''; state.notice = ''; render(); return; }
   if (action === 'connect') return connect();
   if (action === 'close-modal') { state.modal = null; render(); return; }
   if (action === 'use-address') {
@@ -174,7 +233,7 @@ async function handleAction(action, target) {
     return perform('Release evaluation', () => write(state.contract, 'evaluate_check', [id], state.account), async () => {
       const record = await read(state.contract, 'get_check', [id]);
       if (record.status === 'PENDING') throw new Error('The confirmed transaction did not publish a verdict.');
-    });
+    }, { checkId: id, contract: state.contract });
   }
   if (action === 'open-check') { setCheckId(target.dataset.id); await refresh(); document.querySelector('.result')?.scrollIntoView({ behavior: 'smooth' }); return; }
   if (action === 'copy-link') {
@@ -210,11 +269,11 @@ const originalHandleAction = handleAction;
 handleAction = async function patchedHandleAction(action, target) {
   if (action === 'confirm-create') {
     const d = state.draft;
-    setCheckId(d.id);
     return perform('Check creation', () => write(state.contract, 'create_check', [d.id, d.packageName, d.current, d.target, d.usage, d.release, d.migration], state.account), async () => {
       const record = await read(state.contract, 'get_check', [d.id]);
       if (record.owner !== state.account.toLowerCase()) throw new Error('The created check could not be verified on-chain.');
-    });
+      setCheckId(d.id);
+    }, { checkId: d.id, contract: state.contract });
   }
   return originalHandleAction(action, target);
 };

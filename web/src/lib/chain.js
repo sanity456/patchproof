@@ -84,7 +84,8 @@ export function successfulReceipt(receipt) {
 }
 
 export async function waitForFinality(hash, account) {
-  const receipt = await client(account).waitForTransactionReceipt({ hash, status: 'FINALIZED', interval: 5000, retries: 120 });
+  const receipt = await client(account && getProvider() ? account : undefined)
+    .waitForTransactionReceipt({ hash, status: 'FINALIZED', interval: 5000, retries: 120 });
   if (!successfulReceipt(receipt)) throw new Error('The transaction did not finalize successfully. Check its explorer record.');
   return receipt;
 }
