@@ -34,3 +34,13 @@ npm run build
 5. Share the public check link after finality.
 
 All PatchProof contract calls attach `0 GEN`. Normal Studionet network fees may apply. Do not include private data; requests and results are public.
+
+### Verified Studionet deployment
+
+- Contract: `0x34f011e6286b3982ef9586765De1C479A135D7a7`
+- Deployment transaction: `0x1294af42bd71947722553af7488ec14ca9218e8f14715de5f0a97a3eaf592455`
+- End-to-end QA check: `fc039685b3459967cb4d3c8e205fa2fe`
+- Creation transaction: `0x0dbcc1e618feaea4aa6be63169666fda159ace2c2c65d4a02cd85c15375637db`
+- Consensus transaction: `0xef86cac255fcb2e7cb900766089e2cc047a09b433fbad72667276180b59e73c7`
+
+The QA check compared Vite `6.3.5` with `7.0.0` for a declared Node.js `18.19.1` build environment. Five validators finalized a majority-agree `BREAKING` verdict with `HIGH` severity, verified passages from both pinned sources, and SHA-256 source receipts.
