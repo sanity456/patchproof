@@ -4,7 +4,9 @@ import source from '../../../contracts/patchproof.py?raw';
 import deployment from '../deployment.json';
 
 export const CHAIN_ID = 61999;
-export const EXPLORER = studionet.blockExplorers.default.url;
+// genlayer-js 0.23 still advertises the retired Vercel explorer.
+// Use the current public Studionet explorer for wallet metadata and review links.
+export const EXPLORER = 'https://explorer-studio.genlayer.com';
 export const CONTRACT_SOURCE = source;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const CHECK_RE = /^[a-f0-9]{32}$/;
